@@ -6,7 +6,12 @@ import { SearchBox } from "@/components/SearchBox";
 import { Map } from "@/components/Map";
 import io from "socket.io-client";
 
-const socket = io("http://localhost:8080");
+interface User {
+    userId: string;
+    position: google.maps.LatLngLiteral;
+}
+
+const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080");
 
 export default function Home() {
     const [origin, setOrigin] = useState<google.maps.LatLngLiteral | null>(null);
@@ -17,7 +22,7 @@ export default function Home() {
     const [steps, setSteps] = useState<google.maps.DirectionsStep[]>([]);
     const [duration, setDuration] = useState<string>("");
     const [travelMode, setTravelMode] = useState<string>("DRIVING");
-    const [users, setUsers] = useState<{ [key: string]: google.maps.LatLngLiteral }>({});
+    const [users, setUsers] = useState<{ [key: string]: User }>({});
 
     const getUserLocation = () => {
         navigator.geolocation.getCurrentPosition((position) => {
@@ -38,6 +43,17 @@ export default function Home() {
     };
     const generateUniqueId = (): string => {
         return crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    };
+    const sendRouteToServer = () => {
+        if (origin && destination) {
+            const routeData = {
+                userId: localStorage.getItem("userId"),
+                origin,
+                destination,
+            };
+            console.log(routeData);
+            socket.emit("sendRoute", routeData);
+        }
     };
 
     useEffect(() => {
@@ -67,9 +83,20 @@ export default function Home() {
             setUsers(updatedUsers || {});
         });
 
+        socket.on("receiveRoute", (routeData) => {
+            console.log("Trajet reçu :", routeData);
+
+            if (routeData.userId !== userId) {
+                setOrigin(routeData.origin);
+                setDestination(routeData.destination);
+                setShowRoute(true);
+            }
+        });
+
+
         return () => {
-            //clearInterval(interval);
-            socket.disconnect();
+            socket.off("receiveRoute");
+            socket.off("updatePositions");
         };
     }, [showRoute]);
 
@@ -128,7 +155,13 @@ export default function Home() {
 
                     <p className="font-bold">Destination : </p>
                     <SearchBox onSelect={(location) => setDestination(location)} placeholder="Adresse de destination"/>
-                    <button className="flex-none rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500" onClick={() => setShowRoute(true)} disabled={!destination}>
+                    <button className="flex-none rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                            onClick={() => {
+                                setShowRoute(true);
+                                sendRouteToServer();
+                            }}
+                            disabled={!destination}
+                    >
                         Afficher l&#39;itinéraire
                     </button>
 
